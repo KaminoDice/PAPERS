@@ -1,0 +1,277 @@
+<html>
+  <head>
+    <title>Secure Computation with HELib - The Type-Safe Jabberwolk</title>
+    <link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/3.2.0/build/cssreset/reset-min.css">
+    <link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/3.2.0/build/cssbase/base-min.css">
+    <link rel="stylesheet" type="text/css" href="http://yui.yahooapis.com/3.2.0/build/cssfonts/fonts-min.css">
+    <link rel="stylesheet" type="text/css" href="/stylesheets/stylesheet.css"/>
+    <link rel="alternate" type="application/rss+xml" href="http://tommd.github.io/feed.xml"/>
+    <script type="text/x-mathjax-config">
+MathJax.Hub.Config(
+  {"HTML-CSS": { preferredFont: "TeX", availableFonts: ["STIX","TeX"] },
+   tex2jax: {
+     element: null,
+     preview: "none",
+     skipTags: ["script","noscript","style","textarea","pre","code"],
+     inlineMath: [
+       ['$', '$'],
+       ["\\(", "\\)"],
+     ],
+     displayMath: [
+       ['$$', '$$'],
+       ["\\[", "\\]"],
+     ],
+     processEscapes: true,
+     ignoreClass: "tex2jax_ignore|dno"
+   },
+   TeX: {
+     extensions: ["AMSmath.js","AMSsymbols.js","cancel.js"],
+     equationNumbers: { autoNumber: "AMS" },
+     noUndefined: { attributes: {
+                      mathcolor: "red",
+                      mathbackground: "#FFEEEE",
+                      mathsize: "90%" }
+                  }
+   },
+   messageStyle: "none"
+});
+</script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML"></script>
+    <script src="https://google-code-prettify.googlecode.com/svn/loader/run_prettify.js"></script>
+    
+  </head>
+  <body>
+    <div id="page">
+      <div id="header">
+        <a id="listing" href="/posts/">all posts</a>
+        <a href="/">The Type-Safe Jabberwolk</a>
+      </div>
+      <div id="prev-next-links">
+      <a class="prev-link" href="/posts/RNG-Bench.html">older &raquo;</a>
+  
+      <a class="next-link" href="/posts/Tantrix.html">&laquo; newer</a>
+  
+</div>
+
+<div style="display: none;">
+\(
+
+\)
+</div>
+
+<div id="post">
+  <h1>Secure Computation with HELib</h1>
+  <span class="post-created">Posted 13 May 2013 by Thomas M. DuBuisson</span>
+<p>Homomorphic encryption is a hot new area of study and discussion in the world of cryptography. Using homormorphic encryption it is possible to produce ciphertexts on which an arbitrary third party (ex: Amazon) can perform computations despite the encryption. That is to say, if you have a secret (<span class="math inline">\(pt\)</span>) and homomorphically encrypt it then an operation <span class="math inline">\(f\)</span> can be performed on the cipher text such that <span class="math inline">\(decrypt(f(encrypt(pt))) = f(pt)\)</span>.</p>
+<p>This result is truly stunning, but singing the praises, perils, and history of fully, somewhat, semi, or leveled homomorphic encryption is not what this post is about. You can Google for the cool implications but today I'm going to talk about a particular open-source homomorphic encryption library (written in C++) called HELib.</p>
+<h1 id="what-is-helib">What is HELib?</h1>
+<p><a href="https://github.com/shaih/HElib">HELib</a> implements a homormophic encryption scheme. This library is open source on github and, from a popularity perspective, has really taken off for an obscure crypto library - having over 500 watchers.</p>
+<p>Unlike some earlier HE schemes, HELib uses a SIMD-like optimization known as <a href="http://eprint.iacr.org/2011/133">ciphertext packing</a>. As a result, each individual ciphertext element with which you can perform a computation (addition or multiplication) is conceptually a vector of encrypted plaintext integrals. Thus, this scheme is particularly effective with problems that can benefit from some level of parallel computation.</p>
+<h1 id="example-use-of-helib">Example Use of HELib</h1>
+<p>Folks on github have asked Shai to produce a tutorial showing how to take HELib and perform basic computations such as <span class="math inline">\(2+2\)</span>. As awesome as Shai and Victor are, I don't expect them to find time to fill this request. Hopefully this section of the blog will suffice for most people. This is more of an HELib quick start guide and absolutely not an FHE primer, there is lots of text on FHE but not much on getting started with HELib.</p>
+<p>Lets start with an example that fills two vectors with integrals, encrypts them homomorphically, and performs component-wise addition and multiplication. This process is actually more involved, the real steps we will go through are: declare our parameters (plaintext space, levels, columns, secret key haming weight, security), generate a secret key, obtain an <code>EncryptedArray</code>, which is a class that aids in later computations, encrypt our vectors, perform addition and multiplication, decrypt the results and print.</p>
+<p>Without further ado, lets dive in. NOTE: all this code is based on one of HELibs 'Test_*.cpp' examples.</p>
+<p>First some boiler-plate that is already discussed or self explainitory.</p>
+<pre id="mycode" class="c prettyprint"><code>
+#include &quot;FHE.h&quot;
+#include &quot;EncryptedArray.h&quot;
+#include &lt;NTL/lzz_pXFactoring.h&gt;
+#include &lt;fstream&gt;
+#include &lt;sstream&gt;
+#include &lt;sys/time.h&gt;
+
+int main(int argc, char **argv)
+{
+    /* On our trusted system we generate a new key
+     * (or read one in) and encrypt the secret data set.
+     */
+
+    long m=0, p=2, r=1; // Native plaintext space
+                        // Computations will be &#39;modulo p&#39;
+    long L=16;          // Levels
+    long c=3;           // Columns in key switching matrix
+    long w=64;          // Hamming weight of secret key
+    long d=0;
+    long security = 128;
+    ZZX G;
+    m = FindM(security,L,c,p, d, 0, 0);
+</code></pre>
+<p>Notice the parameter names are pretty consistent in HELib examples as well as the literature. In this case, I am building for GF(2) - so my homormorphic addition is XOR and multiplication is AND. Changing this is as easy as changing the value of <code>p</code>. Folks wanting to see <code>2+2=4</code> should set p to something that matches their desired domain, such as 257 to obtain 8 bit Ints.</p>
+<p>NOTE: I ran into a bug with <code>p=65537</code> and had to manually set <code>m</code> to an acceptable value, 65539, because <code>FindM()</code> failed.</p>
+<p>Now lets use these parameters to build a private key - HELib is evidently asymmetric in addition to being homomorphic, wow!</p>
+<pre id="mycode" class="c prettyprint"><code>
+    FHEcontext context(m, p, r);
+    // initialize context
+    buildModChain(context, L, c);
+    // modify the context, adding primes to the modulus chain
+    FHESecKey secretKey(context);
+    // construct a secret key structure
+    const FHEPubKey&amp; publicKey = secretKey;
+    // an &quot;upcast&quot;: FHESecKey is a subclass of FHEPubKey
+
+    //if(0 == d)
+    G = context.alMod.getFactorsOverZZ()[0];
+
+   secretKey.GenSecKey(w);
+   // actually generate a secret key with Hamming weight w
+
+   addSome1DMatrices(secretKey);
+   cout &lt;&lt; &quot;Generated key&quot; &lt;&lt; endl;</code></pre>
+<p>We have now generated a secret key. Notice the public key was extracted from the private key - this is C++, that isn't just an alias. Interestingly, a public key in this context need only be an encryption of &quot;1&quot;.</p>
+<p>Lets get our helper class instantiated:</p>
+<pre id="mycode" class="c prettyprint"><code>
+   EncryptedArray ea(context, G);
+   // constuct an Encrypted array object ea that is
+   // associated with the given context and the polynomial G
+
+   long nslots = ea.size();</code></pre>
+<p>I find having an <code>nslots</code> value around is useful. You can't pick the number of slots (plaintext elements) a ciphertext can hold, but you can learn what parameters control this value and try to optimize for your situation. Now for encryption.</p>
+<pre id="mycode" class="c prettyprint"><code>
+   vector&lt;long&gt; v1;
+   for(int i = 0 ; i &lt; nslots; i++) {
+       v1.push_back(i*2);
+   }
+   Ctxt ct1(publicKey);
+   ea.encrypt(ct1, publicKey, v1);
+    
+   vector&lt;long&gt; v2;
+   Ctxt ct2(publicKey);
+   for(int i = 0 ; i &lt; nslots; i++) {
+       v2.push_back(i*3);
+   }
+   ea.encrypt(ct2, publicKey, v2);</code></pre>
+<p>Well that was just some verbose C++ with calls to <code>EncryptedArray::encrypt()</code> hidden within. Hopefully by this point the notion has sunk in that we are talking about a whole vector of plaintext values (<code>v1</code>, <code>v2</code>) that are placed into individual ciphertexts (<code>ct1</code>, <code>ct2</code>).</p>
+<p>Lets see some SIMD style computation!</p>
+<pre id="mycode" class="c prettyprint"><code>   // On the public (untrusted) system we
+   // can now perform our computation
+
+   Ctxt ctSum = ct1;
+   Ctxt ctProd = ct1;
+
+   ctSum += ct2;
+   ctProd *= ct2;</code></pre>
+<p>Well damn, that was anti-climactic. When you think about it, it should be almost disappointingly easy if this library is as awesome as I hope I hyped you up to expect.</p>
+<p>Finally, we will decrypt the sum and product results:</p>
+<pre id="mycode" class="c prettyprint"><code>    vector&lt;long&gt; res;
+    ea.decrypt(ctSum, secretKey, res);
+
+    cout &lt;&lt; &quot;All computations are modulo &quot; &lt;&lt; p &lt;&lt; &quot;.&quot; &lt;&lt; endl;
+    for(int i = 0; i &lt; res.size(); i ++) {
+        cout &lt;&lt; v1[i] &lt;&lt; &quot; + &quot; &lt;&lt; v2[i] &lt;&lt; &quot; = &quot; &lt;&lt; res[i] &lt;&lt; endl;
+    }
+
+    ea.decrypt(ctProd, secretKey, res);
+    for(int i = 0; i &lt; res.size(); i ++) {
+        cout &lt;&lt; v1[i] &lt;&lt; &quot; * &quot; &lt;&lt; v2[i] &lt;&lt; &quot; = &quot; &lt;&lt; res[i] &lt;&lt; endl;
+    }
+
+    return 0;
+}</code></pre>
+<p>And that's it - under one hundred lines and you have a program that can add, multiply, subtract, and negate (see the header files) data without even knowing the values.</p>
+<h1 id="performance">Performance</h1>
+<p>The performance of addition and multiplication varies by level, security, and plaintext characteristics (ex: word size). For the example, I get timings of:</p>
+<table>
+<tr>
+<td>
+Modulus
+</td>
+<td>
+Number of Slots
+</td>
+<td>
+Time for addition (ms)
+</td>
+<td>
+Time for multiplication (ms)
+</td>
+</tr>
+<tr>
+<pre><code>&lt;td&gt;257&lt;/td&gt;
+&lt;td&gt;44&lt;/td&gt;
+&lt;td&gt;0.7&lt;/td&gt;
+&lt;td&gt;39&lt;/td&gt;</code></pre>
+</tr>
+<tr>
+<pre><code>&lt;td&gt;8209&lt;/td&gt;
+&lt;td&gt;22&lt;/td&gt;
+&lt;td&gt;0.7&lt;/td&gt;
+&lt;td&gt;38&lt;/td&gt;</code></pre>
+</tr>
+<tr>
+<pre><code>&lt;td&gt;65537&lt;/td&gt;
+&lt;td&gt;2&lt;/td&gt;
+&lt;td&gt;2.9&lt;/td&gt;
+&lt;td&gt;177&lt;/td&gt;</code></pre>
+</tr>
+</table>
+<p>It is worth once-again pointing out that this is running on top of NTL, which isn't thread safe. While you get some &quot;parallelism&quot; from the ciphertext packing you can't take easy advantage of multiple cores without multiple processes.</p>
+<h1 id="noise-in-the-ciphertext">Noise in the CipherText</h1>
+<p>Each operation, but most notably multiply, results in a ciphertext that is more &quot;noisy&quot; than its inputs. Too much noise and your decryption will fail (producing results that don't match your intended computation). Thus, FHE computations have a notion of depth much like a circuit depth. If you exceed a given depth then the noise inherent to the computation will become great enough that decryption can result in errors. The trick is to know your current depth, for any given ciphertext, and perform a <code>recrypt</code> operation that produces a ciphertext of identical meaning but with reduced noise. However, recrypt is computationally expensive so performing it only when needed is critical.</p>
+<p>One way to reduce the number of recrypt operations is to increase the &quot;levels&quot; parameter (<code>L</code> in the above example). There is a trade-off with the depth and how often you recrypt - computing over ciphertexts that support more levels is itself more computationally expensive.</p>
+<p>HELib doesn't currently support a recrypt operation, so you are simply not able to perform computations of significant depth - saving you from the misery of determining a good balance between levels and recryption. This does, however, make noise management critical as you simply are not able to perform computations that require significant depth.</p>
+<h1 id="noise-management">Noise Management</h1>
+<p>I just told you that FHE operations produce ciphertexts that build up noise and this noise prevents decryption. Furthermore, in HELib (as it stands today) this causes a limit to the depth of the computations you can practically perform. As a result, you, the programmer, must be intelligent with respect to your algorithms and how they combine ciphertexts.</p>
+<p>For example, if you wish to acquire the product of an array of ciphertexts (which are themselves arrays of slots) you could perform what is known in functional programming as a fold - a for loop taking a zero element and adding each element in the array. An implementation can be seen below, this is horrible as it causes <span class="math inline">\(O(n)\)</span> noise, where <span class="math inline">\(n\)</span> is the length of the array.</p>
+<pre id="mycode" class="c prettyprint"><code>    int mulEntireArray( Ctxt &amp;res
+                      , const vector&lt;Ctxt&gt; input
+                      , const EncryptedArray &amp;ea)
+    {
+        const int nrElem  = input.size();
+        if(nrElem &gt; 0) {
+            res = input[0];
+            for(int i = 1; i &lt; nrElem; i++) {
+                res.multiplyBy(input[i]);
+            }
+            return 0;
+        }
+        return (-1);
+    }</code></pre>
+<p>Instead you should use a divide and conquer algorithm, cutting the array in half in each iteration and multiply the two haves, terminating with an array of length one. This results in <span class="math inline">\(O(lg(n))\)</span> noise. Below is a display version that uses tail calls, likely not using memory in anything approaching a wise manner in C++ but it makes for easy reading.</p>
+<pre id="mycode" class="c prettyprint"><code>    int mulEntireArray_logNoise( Ctxt &amp;res
+                               , const vector&lt;Ctxt&gt; input
+                               , const EncryptedArray &amp;ea)
+    {
+        const size_t nrElem  = input.size();
+        if(nrElem &gt; 1) {
+            vector&lt;Ctxt&gt; tmp( (nrElem+1)/2
+                            , Ctxt(input[0].getPubKey()));
+            const size_t sz = tmp.size();
+            for(int i=0 ; i &lt; sz; i++) {
+                tmp[i] = input[i];
+            }
+            for(int i=0 ; i &lt; sz &amp;&amp; (sz + i) &lt; nrElem; i++) {
+                tmp[i].multiplyBy(input[sz + i]);
+            }
+            mulEntireArray_logNoise(res, tmp, ea);
+        }
+        else
+            res = input[0];
+        return 0;
+    }</code></pre>
+<p>The important part of the above is that <code>tmp</code> copies the first half of input and multiplies by the second half, terminating when it has a one element vector.</p>
+<h1 id="minor-details-building-and-the-like">Minor Details: Building and the Like</h1>
+<p>HELib currently exists only as a git repository, there is no distribution package or Windows installer. What's more, it depends on a new version of NTL (6.0) that is not packaged by many distributions. To get going, you are going to need to download and install NTL, git clone HELib, build HELib remembering to link it against the new NTL and then build your application.</p>
+<p>For *nix users, the NTL portion should be as simple as:</p>
+<pre id="mycode" class="sh prettyprint"><code>    wget http://www.shoup.net/ntl/ntl-6.0.0.tar.gz
+    tar xzf ntl-6.0.0.tar.gz
+    cd ntl-6.0.0
+    ./configure &amp;&amp; make &amp;&amp; sudo make install # or something like this</code></pre>
+<p>Then to get and build HELib:</p>
+<pre id="mycode" class="sh prettyprint"><code>    git clone git://github.com/shaih/HElib.git
+    cd HElib/src
+    # Edit the Makefile as needed
+    # It already had the correct -I and -L paths for me
+    make</code></pre>
+<p>Now you can write your application and compile it via:</p>
+<pre id="mycode" class="sh prettyprint"><code>    g++ App.cpp $HELib/src/fhe.a -I$HELib/src -o App \
+                                 -L/usr/local/lib -lntl</code></pre>
+<h1 id="future">Future</h1>
+<p>HELib is a young library in a rather young field of cryptography. It blows my mind that the library is so well formed at this point. Hopefully we will see serious contributors and an active community.</p>
+<p>If anyone is interested in either making Haskell bindings or porting it to using something thread safe (not NTL) then I'd be interested and would likely contribute, so get in touch.</p>
+</div>
+      <div id="footer">
+        Copyright &copy; 2015 Thomas M. DuBuisson
+      </div>
+    </div>
+  </body>
+</html>
