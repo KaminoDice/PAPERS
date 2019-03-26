@@ -1,4 +1,6 @@
-#scipy.optimize.minimize  
+https://docs.scipy.org/doc/scipy/reference/tutorial/optimize.html
+
+# scipy.optimize.minimize  
   
 method : str or callable, optional
 Type of solver. Should be one of
@@ -23,7 +25,7 @@ If not given, chosen to be one of BFGS, L-BFGS-B, SLSQP, depending if the proble
   
     
       
-##Notes  
+## Notes  
 
 
 This section describes the available solvers that can be selected by the ‘method’ parameter. The default method is BFGS.
